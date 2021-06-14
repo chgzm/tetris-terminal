@@ -1,6 +1,5 @@
 #include <thread>
 #include <chrono>
-#include <mutex>
 #include <termios.h>
 #include <unistd.h>
 #include <bitset>
@@ -14,8 +13,7 @@ constexpr static const int LOOP_INTERVAL_MSEC = 25;
 constexpr static const int DOWN_INTERVAL_MSEC = 1000;
 
 static uint8_t screen[SCREEN_HEIGHT][SCREEN_WIDTH];
-static std::bitset<5> bKey;
-static std::mutex mtx;
+static std::atomic_bool bKey[5];
 static std::atomic_bool gameOver = false;
 static int score = 0;
 static int lines = 0;
@@ -144,21 +142,21 @@ static void processInput() {
     while (!gameOver) {
         switch(getchar()) {
         // Forced fall
-        case ' ': { mtx.lock(); bKey.set(4); mtx.unlock(); break; }
+        case ' ': { bKey[4] = true; break; }
         // vim key binding
-        case 'h': { mtx.lock(); bKey.set(1); mtx.unlock(); break; }
-        case 'l': { mtx.lock(); bKey.set(0); mtx.unlock(); break; }
-        case 'j': { mtx.lock(); bKey.set(2); mtx.unlock(); break; }
-        case 'k': { mtx.lock(); bKey.set(3); mtx.unlock(); break; }
+        case 'h': { bKey[1] = true; break; }
+        case 'l': { bKey[0] = true; break; }
+        case 'j': { bKey[2] = true; break; }
+        case 'k': { bKey[3] = true; break; }
         // direction key
         case '\033': {
             getchar();
             switch(getchar()) {
-            case 'A': { mtx.lock(); bKey.set(3); mtx.unlock(); break; }
-            case 'B': { mtx.lock(); bKey.set(2); mtx.unlock(); break; }
-            case 'C': { mtx.lock(); bKey.set(0); mtx.unlock(); break; }
-            case 'D': { mtx.lock(); bKey.set(1); mtx.unlock(); break; }
-            default:  {                                        break; }
+            case 'A': { bKey[3] = true; break; }
+            case 'B': { bKey[2] = true; break; }
+            case 'C': { bKey[0] = true; break; }
+            case 'D': { bKey[1] = true; break; }
+            default:  {                 break; }
             }
 
             break;
@@ -204,7 +202,6 @@ int main(int argc, char* argv[]) {
         std::this_thread::sleep_for(std::chrono::milliseconds(LOOP_INTERVAL_MSEC));
 
         // check input
-        mtx.lock(); 
         curCol += (bKey[0] && isDeployable(blockType, curRot, curRow, curCol + 1)) ? 1 : 0;
         curCol -= (bKey[1] && isDeployable(blockType, curRot, curRow, curCol - 1)) ? 1 : 0;        
         curRow += (bKey[2] && isDeployable(blockType, curRot, curRow + 1, curCol)) ? 1 : 0;
@@ -212,8 +209,9 @@ int main(int argc, char* argv[]) {
         curRot %= 4;
         forcedFall = bKey[4];
 
-        bKey.reset();
-        mtx.unlock();
+        for (int i = 0; i < 5; ++i) {
+            bKey[i] = false;
+        }
 
         if (forcedFall) {
             while (isDeployable(blockType, curRot, curRow + 1, curCol)) {
