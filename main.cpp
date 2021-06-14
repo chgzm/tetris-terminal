@@ -15,6 +15,7 @@ constexpr static const int DOWN_INTERVAL_MSEC = 1000;
 static uint8_t screen[SCREEN_HEIGHT][SCREEN_WIDTH];
 static std::atomic_bool bKey[5];
 static std::atomic_bool gameOver = false;
+static std::atomic_bool pauseFlag = false;
 static int score = 0;
 static int lines = 0;
 static int level = 1;
@@ -160,6 +161,11 @@ static void processInput() {
 
             break;
         }
+        // Pause
+        case 'p': {
+            pauseFlag = !pauseFlag; 
+            break;
+        }
         // Quit
         case 'q': {
             gameOver = true; 
@@ -200,6 +206,9 @@ int main(int argc, char* argv[]) {
     bool forcedFall = false;
     while (!gameOver) {
         std::this_thread::sleep_for(std::chrono::milliseconds(LOOP_INTERVAL_MSEC));
+        if (pauseFlag) {
+            continue;
+        }
 
         // check input
         curCol += (bKey[0] && isDeployable(blockType, curRot, curRow, curCol + 1)) ? 1 : 0;
