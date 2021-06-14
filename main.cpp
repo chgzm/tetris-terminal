@@ -8,7 +8,7 @@
 
 constexpr static const int SCREEN_HEIGHT = 20;
 constexpr static const int SCREEN_WIDTH  = 10; 
-constexpr static const int INFO_WIDTH  = 8;
+constexpr static const int INFO_WIDTH = 8;
 constexpr static const int LOOP_INTERVAL_MSEC = 25; 
 constexpr static const int DOWN_INTERVAL_MSEC = 1000;
 
@@ -18,13 +18,12 @@ static std::atomic_bool gameOver = false;
 static int score = 0;
 static int lines = 0;
 static int level = 1;
-static int blockCount = 0;
+struct termios term_buf;
 
 static void initTerm() {
     struct termios term;
-    struct termios termOrig;
-    tcgetattr(STDIN_FILENO, &termOrig);
     tcgetattr(STDIN_FILENO, &term);
+    term_buf = term;
     term.c_lflag &= ~(ICANON|ECHO);
     term.c_cc[VTIME] = 0;
     term.c_cc[VMIN] = 0;
@@ -85,7 +84,7 @@ static void drawScreen(int blockType, int nextBlockType, int curRot, int curRow,
     for (int r = 0; r < SCREEN_HEIGHT + 1; ++r) {
         // field
         for (int c = 0; c < SCREEN_WIDTH + 2; ++c) {
-            if (r == SCREEN_HEIGHT) {
+            if (r == 0 || r == SCREEN_HEIGHT) {
                 if (c == 0 || c == SCREEN_WIDTH + 1) {
                     printf("+");
                 } else {
@@ -121,7 +120,7 @@ static void drawScreen(int blockType, int nextBlockType, int curRot, int curRow,
              printf(" Level:        |");
         } else if (r == 12) {
             printf("          %2d   |", level);
-        } else if (r == SCREEN_HEIGHT) {
+        } else if (r == 0 || r == SCREEN_HEIGHT) {
             for (int c = 0; c < INFO_WIDTH; ++c) {
                 if (c == INFO_WIDTH - 1) {
                     printf("-+");
@@ -194,8 +193,9 @@ int main(int argc, char* argv[]) {
     int nextBlockType = rand() % 7;
     int curRot = 0;
     int curRow = 0;
-    int curCol = SCREEN_WIDTH / 2;
+    int curCol = SCREEN_WIDTH / 2 - 1;
     int loopCount = 0;
+    int blockCount = 0;
     int loopsTillFall = (DOWN_INTERVAL_MSEC / LOOP_INTERVAL_MSEC);
     bool forcedFall = false;
     while (!gameOver) {
@@ -283,27 +283,25 @@ int main(int argc, char* argv[]) {
             lines += complines;
         }
 
+        drawScreen(blockType, nextBlockType, curRot, curRow, curCol);
+
         // next block
-        curCol = SCREEN_WIDTH / 2;
-        curRow = 0;
         curRot = 0;
+        curRow = 0;
+        curCol = SCREEN_WIDTH / 2 - 1;
         blockType = nextBlockType;
         nextBlockType = rand() % 7;
 
         if (isDeployable(blockType, curRot, curRow, curCol) == false) {
             break; // Game over
         }
-
-        drawScreen(blockType, nextBlockType, curRot, curRow, curCol);
     }
 
     printf("Game Over!\n");
     gameOver = true;
     th.join();
 
-    // reset terminal
-    struct termios termOrig;
-    tcsetattr(STDIN_FILENO, TCSANOW, &termOrig);
+    tcsetattr(STDIN_FILENO, TCSANOW, &term_buf);
 
     return 0;
 }
