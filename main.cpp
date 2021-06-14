@@ -9,6 +9,7 @@
 
 constexpr static const int SCREEN_HEIGHT = 20;
 constexpr static const int SCREEN_WIDTH  = 10; 
+constexpr static const int INFO_WIDTH  = 8;
 constexpr static const int LOOP_INTERVAL_MSEC = 25; 
 constexpr static const int DOWN_INTERVAL_MSEC = 500;
 constexpr static const int SPEEDUP_COUNT = 20; 
@@ -17,6 +18,9 @@ static uint8_t screen[SCREEN_HEIGHT][SCREEN_WIDTH];
 static std::bitset<4> bKey;
 static std::mutex mtx;
 static std::atomic_bool gameOver = false;
+static int score = 0;
+static int lines = 0;
+static int level = 1;
 
 static void initTerm() {
     struct termios term;
@@ -75,14 +79,18 @@ static void printPixel(uint8_t type) {
     }
 }
 
-static void drawScreen(int blockType, int curRot, int curRow, int curCol) {
+static void drawScreen(int blockType, int nextBlockType, int curRot, int curRow, int curCol) {
     printf("\e[%dA", SCREEN_HEIGHT + 1); // back to the top
 
     const Block& block = blocks[blockType][curRot];
+    const Block& next = blocks[nextBlockType][0];
     for (int r = 0; r < SCREEN_HEIGHT + 1; r++) {
+        // field
         for (int c = 0; c < SCREEN_WIDTH + 2; ++c) {
             if (r == SCREEN_HEIGHT) {
-                if (c != SCREEN_WIDTH - 1) {
+                if (c == 0 || c == SCREEN_WIDTH + 1) {
+                    printf("+");
+                } else {
                     printf("--");
                 }
             } else if (c == 0 || c == SCREEN_WIDTH + 1) {
@@ -93,6 +101,41 @@ static void drawScreen(int blockType, int curRot, int curRow, int curCol) {
                 printPixel(screen[r][c - 1]);
             }
         }
+
+        // info
+        if (r == 1) {
+            printf(" Next:         |");
+        } else if (1 < r && r < 6) {
+            printf("   ");
+            for (int i = 0; i < 4; ++i) {
+                printPixel(next[r - 2][i]);
+            }
+            printf("    |"); 
+        } else if (r == 7) {
+            printf(" Score:        |");
+        } else if (r == 8) {
+            printf("      %6d   |", score);
+        } else if (r == 9) {
+             printf(" Lines:        |");
+        } else if (r == 10) {
+            printf("      %6d   |", lines);
+        } else if (r == 11) {
+             printf(" Level:        |");
+        } else if (r == 12) {
+            printf("          %2d   |", level);
+        } else if (r == SCREEN_HEIGHT) {
+            for (int c = 0; c < INFO_WIDTH; ++c) {
+                if (c == INFO_WIDTH - 1) {
+                    printf("-+");
+                } else {
+                    printf("--");
+                }
+            }
+        }  
+        else {
+            printf("               |");
+        }
+
         printf("\n");
     }
 }
@@ -148,13 +191,13 @@ int main(int argc, char* argv[]) {
 
     // main loop
     int blockType = rand() % 7;
+    int nextBlockType = rand() % 7;
     int curRot = 0;
     int curRow = 0;
     int curCol = SCREEN_WIDTH / 2;
     int loopCount = 0;
     int fallCount = 0;
     int loopsTillFall = (DOWN_INTERVAL_MSEC / LOOP_INTERVAL_MSEC);
-    int score = 0;
     while (!gameOver) {
         std::this_thread::sleep_for(std::chrono::milliseconds(LOOP_INTERVAL_MSEC));
 
@@ -171,7 +214,7 @@ int main(int argc, char* argv[]) {
 
         ++loopCount;
         if (loopCount < loopsTillFall) {
-            drawScreen(blockType, curRot, curRow, curCol);
+            drawScreen(blockType, nextBlockType, curRot, curRow, curCol);
             continue;
         }
 
@@ -180,11 +223,12 @@ int main(int argc, char* argv[]) {
         ++fallCount;
         if (fallCount % SPEEDUP_COUNT == 0) {
             loopsTillFall = std::max(10, loopsTillFall - 1);
+            ++level;
         }
 
         if (isDeployable(blockType, curRot, curRow + 1, curCol)) {
             curRow++;
-            drawScreen(blockType, curRot, curRow, curCol);
+            drawScreen(blockType, nextBlockType, curRot, curRow, curCol);
             continue;
         }
 
@@ -203,7 +247,7 @@ int main(int argc, char* argv[]) {
         }
 
         // check line complete
-        int clines = 0;
+        int complines = 0;
         for (int i = curRow; (i < SCREEN_HEIGHT && i < curRow + 4); ++i) {
             bool complete = true; 
             for (int j = 0; j < SCREEN_WIDTH; ++j) {
@@ -214,7 +258,7 @@ int main(int argc, char* argv[]) {
             }
 
             if (complete) {
-                ++clines;
+                ++complines;
                 for (int j = i; j > 0; --j) {
                     for (int k = 0; k < SCREEN_WIDTH; ++k) {
                         screen[j][k] = screen[j-1][k]; 
@@ -227,24 +271,26 @@ int main(int argc, char* argv[]) {
             }
         }
 
-        if (clines != 0) {
-            score += (1 << (clines - 1)) * 100;
+        if (complines != 0) {
+            score += (1 << (complines - 1)) * 100;
+            lines += complines;
         }
 
         // next block
         curCol = SCREEN_WIDTH / 2;
         curRow = 0;
         curRot = 0;
-        blockType = rand() % 7;
+        blockType = nextBlockType;
+        nextBlockType = rand() % 7;
 
         if (isDeployable(blockType, curRot, curRow, curCol) == false) {
             break; // Game over
         }
 
-        drawScreen(blockType, curRot, curRow, curCol);
+        drawScreen(blockType, nextBlockType, curRot, curRow, curCol);
     }
 
-    printf("Game Over. Score: %d\n", score);
+    printf("Game Over!\n");
     gameOver = true;
     th.join();
 
