@@ -11,16 +11,16 @@ constexpr static const int SCREEN_HEIGHT = 20;
 constexpr static const int SCREEN_WIDTH  = 10; 
 constexpr static const int INFO_WIDTH  = 8;
 constexpr static const int LOOP_INTERVAL_MSEC = 25; 
-constexpr static const int DOWN_INTERVAL_MSEC = 500;
-constexpr static const int SPEEDUP_COUNT = 20; 
+constexpr static const int DOWN_INTERVAL_MSEC = 1000;
 
 static uint8_t screen[SCREEN_HEIGHT][SCREEN_WIDTH];
-static std::bitset<4> bKey;
+static std::bitset<5> bKey;
 static std::mutex mtx;
 static std::atomic_bool gameOver = false;
 static int score = 0;
 static int lines = 0;
 static int level = 1;
+static int blockCount = 0;
 
 static void initTerm() {
     struct termios term;
@@ -33,7 +33,7 @@ static void initTerm() {
     tcsetattr(STDIN_FILENO, TCSANOW, &term);
 
     // space for screen
-    for (int i = 0; i < SCREEN_HEIGHT + 1; i++) {
+    for (int i = 0; i < SCREEN_HEIGHT + 1; ++i) {
         printf("\n");
     }
 
@@ -84,7 +84,7 @@ static void drawScreen(int blockType, int nextBlockType, int curRot, int curRow,
 
     const Block& block = blocks[blockType][curRot];
     const Block& next = blocks[nextBlockType][0];
-    for (int r = 0; r < SCREEN_HEIGHT + 1; r++) {
+    for (int r = 0; r < SCREEN_HEIGHT + 1; ++r) {
         // field
         for (int c = 0; c < SCREEN_WIDTH + 2; ++c) {
             if (r == SCREEN_HEIGHT) {
@@ -143,6 +143,8 @@ static void drawScreen(int blockType, int nextBlockType, int curRot, int curRow,
 static void processInput() {
     while (!gameOver) {
         switch(getchar()) {
+        // Forced fall
+        case ' ': { mtx.lock(); bKey.set(4); mtx.unlock(); break; }
         // vim key binding
         case 'h': { mtx.lock(); bKey.set(1); mtx.unlock(); break; }
         case 'l': { mtx.lock(); bKey.set(0); mtx.unlock(); break; }
@@ -196,8 +198,8 @@ int main(int argc, char* argv[]) {
     int curRow = 0;
     int curCol = SCREEN_WIDTH / 2;
     int loopCount = 0;
-    int fallCount = 0;
     int loopsTillFall = (DOWN_INTERVAL_MSEC / LOOP_INTERVAL_MSEC);
+    bool forcedFall = false;
     while (!gameOver) {
         std::this_thread::sleep_for(std::chrono::milliseconds(LOOP_INTERVAL_MSEC));
 
@@ -208,28 +210,28 @@ int main(int argc, char* argv[]) {
         curRow += (bKey[2] && isDeployable(blockType, curRot, curRow + 1, curCol)) ? 1 : 0;
         curRot += (bKey[3] && isDeployable(blockType, (curRot + 1) % 4, curRow, curCol)) ? 1 : 0;
         curRot %= 4;
+        forcedFall = bKey[4];
 
         bKey.reset();
         mtx.unlock();
 
-        ++loopCount;
-        if (loopCount < loopsTillFall) {
-            drawScreen(blockType, nextBlockType, curRot, curRow, curCol);
-            continue;
-        }
+        if (forcedFall) {
+            while (isDeployable(blockType, curRot, curRow + 1, curCol)) {
+                ++curRow;
+            }
+        } else {
+            ++loopCount;
+            if (loopCount < loopsTillFall) {
+                drawScreen(blockType, nextBlockType, curRot, curRow, curCol);
+                continue;
+            }
+            loopCount = 0;
 
-        // block falls
-        loopCount = 0;
-        ++fallCount;
-        if (fallCount % SPEEDUP_COUNT == 0) {
-            loopsTillFall = std::max(10, loopsTillFall - 1);
-            ++level;
-        }
-
-        if (isDeployable(blockType, curRot, curRow + 1, curCol)) {
-            curRow++;
-            drawScreen(blockType, nextBlockType, curRot, curRow, curCol);
-            continue;
+            if (isDeployable(blockType, curRot, curRow + 1, curCol)) {
+                ++curRow;
+                drawScreen(blockType, nextBlockType, curRot, curRow, curCol);
+                continue;
+            }
         }
 
         // falling blok is fixed.
@@ -244,6 +246,13 @@ int main(int argc, char* argv[]) {
                 const int c = curCol + j;
                 screen[r][c] = t[i][j];
             }
+        }
+        ++blockCount;
+
+        // Level up every 10 blocks
+        if (blockCount % 10 == 0) {
+            ++level;
+            loopsTillFall = std::max(10, loopsTillFall - 1);
         }
 
         // check line complete
