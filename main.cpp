@@ -26,8 +26,8 @@ static void initTerm() {
     tcgetattr(STDIN_FILENO, &term);
     term_buf = term;
     term.c_lflag &= ~(ICANON|ECHO);
-    term.c_cc[VTIME] = 0;
-    term.c_cc[VMIN] = 0;
+    // term.c_cc[VTIME] = 0;
+    // term.c_cc[VMIN] = 0;
     tcsetattr(STDIN_FILENO, TCSANOW, &term);
 
     // space for screen
